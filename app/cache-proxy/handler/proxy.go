@@ -3,7 +3,6 @@ package handler
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 
@@ -50,13 +49,7 @@ func (p *Proxy) checkProxyStart() {
 
 //welcome 命令行界面.
 func (p *Proxy) welcome() {
-	b, err := ioutil.ReadFile("./app/cache-proxy/README")
-	if err != nil {
-		log.Printf("err:%+v\n", err)
-		return
-	}
-
-	log.Println(string(b))
+	log.Println("Bigcache Proxy")
 }
 
 //listen 监听.

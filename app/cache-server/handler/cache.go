@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 
@@ -33,22 +32,22 @@ func NewServer() Cache {
 }
 
 //Start.
-func (c *Cache) Start() {
-	c.start()
+func (cache *Cache) Start() {
+	cache.start()
 }
 
-func (c *Cache) start() {
-	go c.checkServerStart()
-	c.listen()
+func (cache *Cache) start() {
+	go cache.checkServerStart()
+	cache.listen()
 }
 
 //checkServerStart 检查是否启动成功.
-func (c *Cache) checkServerStart() {
+func (cache *Cache) checkServerStart() {
 	for {
 		select {
-		case msg := <-c.Ch:
+		case msg := <-cache.Ch:
 			if msg {
-				c.welcome()
+				cache.welcome()
 			} else {
 				log.Println("启动失败")
 			}
@@ -56,23 +55,18 @@ func (c *Cache) checkServerStart() {
 	}
 }
 
-func (c *Cache) welcome() {
-	b, err := ioutil.ReadFile("./app/cache-server/README")
-	if err != nil {
-		log.Printf("err:%+v\n", err)
-		return
-	}
-	log.Println(string(b))
+func (cache *Cache) welcome() {
+	log.Println("Bigcache Server")
 }
 
-func (c *Cache) listen() {
-	listener, err := net.Listen("tcp4", c.Addr)
+func (cache *Cache) listen() {
+	listener, err := net.Listen("tcp4", cache.Addr)
 	if err != nil {
-		c.Ch <- false
+		cache.Ch <- false
 		log.Printf("err:%+v\n", err)
 		return
 	}
-	c.Ch <- true
+	cache.Ch <- true
 
 	for {
 		conn, err := listener.Accept()
@@ -81,12 +75,12 @@ func (c *Cache) listen() {
 			return
 		}
 
-		client := c.NewClient(conn)
-		go c.handler(client)
+		client := cache.NewClient(conn)
+		go cache.handler(client)
 	}
 }
 
-func (c *Cache) handler(cli *Client) {
+func (cache *Cache) handler(cli *Client) {
 	for {
 		pkt, err := packet.ParseRequest(cli.Conn)
 		if err != nil {
@@ -95,88 +89,87 @@ func (c *Cache) handler(cli *Client) {
 				log.Println("断开连接!")
 				return
 			}
-
-			buf := packet.NewResponse(err.Error(), errcode.INFO)
-			cli.Conn.Write(buf)
+			cli.Write(err.Error(), errcode.INFO)
 			continue
 		}
 
-		if pkt.Protocol == packet.WRITE {
-			//写操作.
-			content := []string{}
-			if err := json.Unmarshal(pkt.Body, &content); err != nil {
-				log.Printf("err:%+v\n", err)
-				buf := packet.NewResponse(err.Error(), errcode.INFO)
-				cli.Conn.Write(buf)
-				return
-			}
-
-			key := content[0]
-			val := content[1]
-
-			// log.Println(key, val)
-			if err := c.Storage.Write(key, val); err != nil {
-				log.Printf("err:%+v\n", err)
-				buf := packet.NewResponse(err.Error(), errcode.INFO)
-				cli.Conn.Write(buf)
-				continue
-			}
-
-			buf := packet.NewResponse("OK", errcode.NO_ERROR)
-			cli.Conn.Write(buf)
-		}
-
-		if pkt.Protocol == packet.READ {
-			//读操作.
-			content := []string{}
-			if err := json.Unmarshal(pkt.Body, &content); err != nil {
-				log.Printf("err:%+v\n", err)
-				buf := packet.NewResponse(err.Error(), errcode.INFO)
-				cli.Conn.Write(buf)
-				continue
-			}
-
-			key := content[0]
-
-			val, err := c.Storage.Read(key)
-			if err != nil {
-				if err == leveldb.ErrNotFound {
-					buf := packet.NewResponse(err.Error(), errcode.NOT_FOUND)
-					cli.Conn.Write(buf)
-					continue
-				}
-				log.Printf("err:%+v\n", err)
-				buf := packet.NewResponse(err.Error(), errcode.INFO)
-				cli.Conn.Write(buf)
-				continue
-			}
-
-			buf := packet.NewResponse(val, errcode.NO_ERROR)
-			cli.Conn.Write(buf)
-		}
-
-		if pkt.Protocol == packet.DELETE {
-			//读操作.
-			content := []string{}
-			if err := json.Unmarshal(pkt.Body, &content); err != nil {
-				log.Printf("err:%+v\n", err)
-				buf := packet.NewResponse(err.Error(), errcode.INFO)
-				cli.Conn.Write(buf)
-				continue
-			}
-
-			key := content[0]
-
-			err := c.Storage.Delete(key)
-			if err != nil {
-				log.Printf("err:%+v\n", err)
-				buf := packet.NewResponse(err.Error(), errcode.INFO)
-				cli.Conn.Write(buf)
-				continue
-			}
-
-			buf := packet.NewResponse("OK", errcode.NO_ERROR)
-			cli.Conn.Write(buf)
+		switch pkt.Protocol {
+		case packet.WRITE:
+			cache.Write(pkt.Body, cli)
+		case packet.READ:
+			cache.Read(pkt.Body, cli)
+		case packet.DELETE:
+			cache.Delete(pkt.Body, cli)
 		}
 	}
+}
+
+//Read 读操作.
+func (cache *Cache) Read(body []byte, cli *Client) {
+	//读操作.
+	content := []string{}
+	if err := json.Unmarshal(body, &content); err != nil {
+		log.Printf("err:%+v\n", err)
+		cli.Write(err.Error(), errcode.INFO)
+		return
+	}
+
+	key := content[0]
+
+	val, err := cache.Storage.Read(key)
+	if err != nil {
+		if err == leveldb.ErrNotFound {
+			cli.Write(err.Error(), errcode.NOT_FOUND)
+			return
+		}
+		log.Printf("err:%+v\n", err)
+		cli.Write(err.Error(), errcode.INFO)
+		return
+	}
+
+	cli.Write(val, errcode.NO_ERROR)
+}
+
+//Write 写操作
+func (cache *Cache) Write(body []byte, cli *Client) {
+	//写操作.
+	content := []string{}
+	if err := json.Unmarshal(body, &content); err != nil {
+		log.Printf("err:%+v\n", err)
+		cli.Write(err.Error(), errcode.INFO)
+		return
+	}
+
+	key := content[0]
+	val := content[1]
+
+	if err := cache.Storage.Write(key, val); err != nil {
+		log.Printf("err:%+v\n", err)
+		cli.Write(err.Error(), errcode.INFO)
+		return
+	}
+
+	cli.Write("OK", errcode.NO_ERROR)
+}
+
+//Delete 删除操作.
+func (cache *Cache) Delete(body []byte, cli *Client) {
+	//删除操作.
+	content := []string{}
+	if err := json.Unmarshal(body, &content); err != nil {
+		log.Printf("err:%+v\n", err)
+		cli.Write(err.Error(), errcode.INFO)
+		return
+	}
+
+	key := content[0]
+
+	err := cache.Storage.Delete(key)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		cli.Write(err.Error(), errcode.INFO)
+		return
+	}
+
+	cli.Write("OK", errcode.NO_ERROR)
 }
