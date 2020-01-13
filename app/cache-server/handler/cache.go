@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -24,7 +23,7 @@ type Cache struct {
 //NewServer.
 func NewServer() Cache {
 	cache := Cache{
-		Addr:    fmt.Sprintf(":%d", conf.GetInt("port")),
+		Addr:    conf.GetString("addr"),
 		Ch:      make(chan bool),
 		Storage: NewStorage(conf.GetString("storage_dir")),
 	}

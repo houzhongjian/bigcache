@@ -17,11 +17,14 @@ const HEADER_LEN = 4
 type BigcacheProtocol int
 
 const (
-	CONN_AUTH BigcacheProtocol = 1000 //连接授权.
-	READ      BigcacheProtocol = 1001 //获取一条记录.
-	WRITE     BigcacheProtocol = 1002 //写入一条记录.
-	DELETE    BigcacheProtocol = 1003 //删除一条记录.
-	MSG       BigcacheProtocol = 1004 //发生一条状态消息.
+	CONN_AUTH            BigcacheProtocol = 1000 //连接授权.
+	READ                 BigcacheProtocol = 1001 //获取一条记录.
+	WRITE                BigcacheProtocol = 1002 //写入一条记录.
+	DELETE               BigcacheProtocol = 1003 //删除一条记录.
+	MSG                  BigcacheProtocol = 1004 //发生一条状态消息.
+	ADD_NODE             BigcacheProtocol = 1005 //新增加节点.
+	REMOVE_NODE          BigcacheProtocol = 1006 //删除节点.
+	GET_CACHE_SERVER_ALL BigcacheProtocol = 1007 //获取所有的cache server 节点.
 )
 
 type Request struct {
