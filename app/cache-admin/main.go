@@ -13,6 +13,6 @@ func main() {
 	cmd := cmd.New()
 	conf.Load(cmd.Conf)
 
-	srv := handler.NewMaster()
+	srv := handler.NewAdmin()
 	srv.Start()
 }

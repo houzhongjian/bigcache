@@ -11,7 +11,6 @@ import (
 	"go.etcd.io/etcd/clientv3"
 
 	"github.com/houzhongjian/bigcache/lib/conf"
-	"github.com/houzhongjian/bigcache/lib/utils"
 )
 
 type Proxy struct {
@@ -20,19 +19,6 @@ type Proxy struct {
 	Etcd        *clientv3.Client
 	Lock        *sync.RWMutex
 	CacheServer map[string]net.Conn
-}
-
-//节点类型.
-type NodeType uint
-
-const (
-	CACHE_PROXY_NODE  NodeType = 1 //代理节点.
-	CACHE_SERVER_NODE NodeType = 2 //存储节点.
-)
-
-type Node struct {
-	Types NodeType
-	IP    string
 }
 
 //NewProxy.
@@ -54,7 +40,6 @@ func (p *Proxy) Start() {
 func (p *Proxy) start() {
 	//监听tcp端口.
 	go p.checkProxyStart()
-	// go p.connMasterNode()
 	p.listen()
 }
 
@@ -143,44 +128,47 @@ func (p *Proxy) handler(cli *Client) {
 			}
 		}
 
-		if proto.Command == "COMMAND" {
-			redis.connection()
-			continue
-		}
-
-		//1、计算当前key的插槽.
-		//2、根据插槽去etcd中获取当前插槽对应的ip地址.
-		//3、根据ip地址在cacheServer中获取对应的连接地址.
-
-		//1、 计算key对应的插槽
-		slot := utils.Slot(string(proto.Args[0]))
-		log.Println(slot)
-
-		//2、根据插槽获取对应的ip地址
-		ip, err := p.getSlot(slot)
+		//根据key获取插槽信息.
+		slot, err := p.getSlot(proto)
 		if err != nil {
 			redis.error(err.Error())
 			continue
 		}
 
-		log.Println("定位cache server ip:", ip)
-		cacheServerConn, ok := p.CacheServer[ip]
-		if !ok {
-			redis.error("服务器错误")
-			continue
-		}
-
-		switch proto.Command {
-		case "PING":
-			redis.ping()
-		case "SET":
-			redis.set(cacheServerConn, proto.Args)
-		case "GET":
-			redis.get(cacheServerConn, proto.Args)
-		case "DEL":
-			redis.del(cacheServerConn, proto.Args)
-		default:
-			redis.error("暂不支持当前命令")
-		}
+		redis.service(proto, slot)
 	}
 }
+
+//getCacheServerConn 根据key 获取cache server 的连接.
+//1、计算当前key的插槽.
+//2、根据插槽去etcd中获取当前插槽对应的ip地址.
+//3、根据ip地址在cacheServer中获取对应的连接地址.
+// func (p *Proxy) getCacheServerIP(key string) (conn net.Conn, err error) {
+// 	//1、 计算key对应的插槽
+// 	slot := utils.Slot(key)
+// 	log.Println(slot)
+
+// 	//2、获取插槽信息
+// 	data, err := p.getSlot(slot)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	slotInfo := &Slot{}
+// 	if err := json.Unmarshal([]byte(data), &slotInfo); err != nil {
+// 		log.Printf("err:%+v\n", err)
+// 		return nil, err
+// 	}
+
+// 	//判断插槽的状态.
+// 	if slotInfo.Types == SLOT_TYPE_NORMAL {
+
+// 	}
+
+// 	log.Println("定位cache server ip:", ip)
+// 	cacheServerConn, ok := p.CacheServer[ip]
+// 	if !ok {
+// 		return nil, errors.New("服务器错误")
+// 	}
+
+// 	return cacheServerConn, nil
+// }

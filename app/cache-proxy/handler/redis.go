@@ -8,8 +8,10 @@ import (
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 
+	"github.com/houzhongjian/bigcache/base"
 	"github.com/houzhongjian/bigcache/lib/errcode"
 
 	"github.com/houzhongjian/bigcache/lib/packet"
@@ -136,6 +138,7 @@ func (r *Redis) int(n int) {
 	msg := fmt.Sprintf(":%d\r\n", n)
 	r.conn.Write([]byte(msg))
 }
+
 func (r *Redis) set(srv net.Conn, args [][]byte) {
 	key := string(args[0])
 	val := string(args[1])
@@ -173,6 +176,7 @@ func (r *Redis) set(srv net.Conn, args [][]byte) {
 	r.connection()
 }
 
+//先读取新节点.
 func (r *Redis) get(srv net.Conn, args [][]byte) {
 	key := string(args[0])
 	content := []string{
@@ -243,4 +247,155 @@ func (r *Redis) del(srv net.Conn, args [][]byte) {
 		return
 	}
 	r.int(1)
+}
+
+//getMigrate 处理迁移状态的get命令.
+//如果插槽处于迁移状态下，先读取新迁移的节点，如果没读取到，在读取旧的节点.
+func (r *Redis) getMigrate(srv, newSrv net.Conn, args [][]byte) {
+	//读取新节点.
+	// newSrv.
+	//新节点如果没有读取到，在读取旧节点.
+	key := string(args[0])
+	content := []string{
+		key,
+	}
+	b, err := json.Marshal(content)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		r.error(err.Error())
+		return
+	}
+
+	buf := packet.NewRequest(b, packet.READ)
+	_, err = newSrv.Write([]byte(buf))
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		r.error(err.Error())
+		return
+	}
+
+	pkt, err := packet.ParseResponse(srv)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		r.error(err.Error())
+		return
+	}
+
+	if pkt.Err != errcode.NO_ERROR {
+		if pkt.Err == errcode.NOT_FOUND {
+			//新节点没有读取到数据，现在读取旧节点数据.
+			r.get(srv, args)
+			return
+		}
+		r.error(pkt.Msg)
+		return
+	}
+	r.write(pkt.Msg, len(pkt.Msg))
+}
+
+//delMigrate 插槽处于迁移状态下的删除操作.
+func (r *Redis) delMigrate(srv, newSrv net.Conn, args [][]byte) {
+	//先确定数据存在与那个节点.
+	key := string(args[0])
+	content := []string{
+		key,
+	}
+	b, err := json.Marshal(content)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		r.error(err.Error())
+		return
+	}
+
+	buf := packet.NewRequest(b, packet.READ)
+	_, err = newSrv.Write([]byte(buf))
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		r.error(err.Error())
+		return
+	}
+
+	pkt, err := packet.ParseResponse(srv)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		r.error(err.Error())
+		return
+	}
+
+	if pkt.Err != errcode.NO_ERROR {
+		if pkt.Err == errcode.NOT_FOUND {
+			//新节点没有读取到数据，现在读取旧节点数据.
+			r.del(srv, args)
+			return
+		}
+		r.error(pkt.Msg)
+		return
+	}
+
+	r.del(newSrv, args)
+}
+
+//selectdb .
+func (r *Redis) selectdb(args [][]byte) {
+	db := string(args[0])
+	_, err := strconv.Atoi(db)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		r.error(err.Error())
+		return
+	}
+
+	r.connection()
+}
+
+func (r *Redis) service(proto RedisProto, slot base.Slot) {
+	//允许连接.
+	if proto.Command == "COMMAND" {
+		r.connection()
+		return
+	}
+
+	//ping.
+	if proto.Command == "PING" {
+		r.ping()
+		return
+	}
+
+	if proto.Command == "SELECT" {
+		r.selectdb(proto.Args)
+		return
+	}
+
+	//set 并且当前插槽不处于迁移状态.
+	if proto.Command == "SET" && slot.Types == base.SLOT_TYPE_NORMAL {
+		r.set(slot.Conn, proto.Args)
+		return
+	}
+
+	if proto.Command == "SET" && slot.Types == base.SLOT_TYPE_MIGRATE {
+		r.set(slot.NewConn, proto.Args)
+		return
+	}
+
+	if proto.Command == "GET" && slot.Types == base.SLOT_TYPE_NORMAL {
+		r.get(slot.Conn, proto.Args)
+		return
+	}
+
+	if proto.Command == "GET" && slot.Types == base.SLOT_TYPE_MIGRATE {
+		r.getMigrate(slot.Conn, slot.NewConn, proto.Args)
+		return
+	}
+
+	if proto.Command == "DEL" && slot.Types == base.SLOT_TYPE_NORMAL {
+		r.del(slot.Conn, proto.Args)
+		return
+	}
+
+	if proto.Command == "DEL" && slot.Types == base.SLOT_TYPE_MIGRATE {
+		r.delMigrate(slot.Conn, slot.NewConn, proto.Args)
+		return
+	}
+
+	r.error("暂不支持当前命令")
 }

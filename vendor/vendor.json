@@ -3,6 +3,30 @@
 	"ignore": "test",
 	"package": [
 		{
+			"checksumSHA1": "SMgMehdOfRr7lNgyyxR5KnhuPz0=",
+			"path": "github.com/gin-gonic/gin",
+			"revision": "37854ee10f7161843c338d9a9fa87f9398aacbbe",
+			"revisionTime": "2018-11-06T05:40:20Z"
+		},
+		{
+			"checksumSHA1": "7V7gIifyhRRucnUhbw7LZfSRPMs=",
+			"path": "github.com/gin-gonic/gin/binding",
+			"revision": "37854ee10f7161843c338d9a9fa87f9398aacbbe",
+			"revisionTime": "2018-11-06T05:40:20Z"
+		},
+		{
+			"checksumSHA1": "Y8Vu2NT4c2ve963fedBxoJyiU6s=",
+			"path": "github.com/gin-gonic/gin/internal/json",
+			"revision": "37854ee10f7161843c338d9a9fa87f9398aacbbe",
+			"revisionTime": "2018-11-06T05:40:20Z"
+		},
+		{
+			"checksumSHA1": "afLqBfX9SeIP6eeTZb3WwdTFaOo=",
+			"path": "github.com/gin-gonic/gin/render",
+			"revision": "37854ee10f7161843c338d9a9fa87f9398aacbbe",
+			"revisionTime": "2018-11-06T05:40:20Z"
+		},
+		{
 			"checksumSHA1": "4NTmfUj7H5J59M2wCnp3/8FWt1I=",
 			"path": "github.com/syndtr/goleveldb/leveldb",
 			"revision": "c3a204f8e96543bb0cc090385c001078f184fc46",
