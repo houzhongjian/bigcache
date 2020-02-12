@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/houzhongjian/bigcache/app/cache-admin/module/migrate"
+
 	"go.etcd.io/etcd/clientv3"
 
 	"github.com/gin-gonic/gin"
@@ -345,11 +347,13 @@ func (admin *Admin) StartMigrateHandle(c *gin.Context) {
 		return
 	}
 
-	//更改插槽的数据.
+	//更改插槽的状态为迁移状态.
+	//插槽新增迁移ip .
 	slot := base.Slot{
 		ID:    task.SlotID,
-		Types: base.SLOT_TYPE_NORMAL,
-		IP:    task.TargetIP,
+		Types: base.SLOT_TYPE_MIGRATE,
+		IP:    task.MigrateIP,
+		NewIP: task.TargetIP,
 	}
 	b, err := json.Marshal(slot)
 	if err != nil {
@@ -371,6 +375,7 @@ func (admin *Admin) StartMigrateHandle(c *gin.Context) {
 	}
 
 	//TODO 执行迁移任务.
-
+	//通知对应服务，开始准备迁移.
+	go migrate.Run(slot)
 	admin.ReturnJson(c, "开始迁移", true)
 }

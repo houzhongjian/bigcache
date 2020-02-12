@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/houzhongjian/bigcache/app/cache-admin/handler"
+	"github.com/houzhongjian/bigcache/app/cache-admin/module/handler"
 	"github.com/houzhongjian/bigcache/cmd"
 	"github.com/houzhongjian/bigcache/lib/conf"
 )
