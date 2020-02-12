@@ -5,24 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"sort"
-	"strings"
-	"time"
 
 	"go.etcd.io/etcd/clientv3"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/houzhongjian/bigcache/app/cache-admin/model"
 	"github.com/houzhongjian/bigcache/base"
 	"github.com/houzhongjian/bigcache/lib/conf"
 	"github.com/houzhongjian/bigcache/lib/utils"
 )
 
 type Admin struct {
-	Addr string
-	Etcd *clientv3.Client
+	Addr  string
+	Etcd  *clientv3.Client
+	Model *model.Model
 }
 
 type AdminEngine interface {
@@ -36,66 +35,19 @@ type SlotParams struct {
 	IP        string
 }
 
-//插槽类型.
-type SlotType uint
-
-const (
-	SLOT_TYPE_NORMAL  SlotType = 1 //正常状态.
-	SLOT_TYPE_MIGRATE SlotType = 2 //迁移状态.
-)
-
-type Slot struct {
-	ID      uint
-	Types   SlotType
-	IP      string   //插槽对应的ip地址.
-	NewIP   string   //当插槽处于迁移状态的时候，当前属性才会有值.
-	Conn    net.Conn `json:"-"`
-	NewConn net.Conn `json:"-"`
-}
-
 //NewAdmin 返回一个Admin接口.
 func NewAdmin() AdminEngine {
 	var admin AdminEngine
 	admin = &Admin{
-		Addr: fmt.Sprintf(":%s", conf.GetString("addr")),
-		Etcd: newEtcd(),
+		Addr:  fmt.Sprintf(":%s", conf.GetString("addr")),
+		Etcd:  newEtcd(),
+		Model: model.New(),
 	}
 	return admin
 }
 
-func newEtcd() *clientv3.Client {
-	sarr := strings.Split(conf.GetString("etcd_addr"), ",")
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   sarr,
-		DialTimeout: 5 * time.Second,
-	})
-
-	if err != nil {
-		log.Panicf("err:%+v\n", err)
-		return nil
-	}
-
-	return cli
-}
-
 func (admin *Admin) Start() {
 	admin.newWeb()
-}
-
-//newWeb .
-func (admin *Admin) newWeb() {
-	r := gin.New()
-	r.Static("/static/", "./static/")
-	r.LoadHTMLGlob("./web/*")
-	r.GET("/admin/index", admin.IndexHandle)
-	r.GET("/admin/node", admin.NodeHandle)
-	r.POST("/admin/node", admin.NodeHandle)
-	r.GET("/admin/slot", admin.SlotHandle)
-	r.POST("/admin/slot", admin.SlotHandle)
-	r.GET("/admin/migrate", admin.MigrateHandle)
-	r.POST("/admin/migrate", admin.MigrateHandle)
-	// r.POST("/admin/slot", admin.SlotHandle)
-	r.Run(admin.Addr)
 }
 
 func (admin *Admin) ReturnJson(c *gin.Context, msg string, status bool) {
@@ -206,7 +158,6 @@ func (admin *Admin) SlotHandle(c *gin.Context) {
 
 		for i := startSlot; i <= endSlot; i++ {
 			key := fmt.Sprintf("/slot/%d", i)
-			// val :=
 			slot := base.Slot{
 				ID:    i,
 				Types: base.SLOT_TYPE_NORMAL,
@@ -258,7 +209,6 @@ func (admin *Admin) SlotHandle(c *gin.Context) {
 		}
 	}
 
-	// log.Printf("slotData:%+v\n", slotData)
 	data := map[string]interface{}{
 		"CacheServerList": cacheServer,
 		"SlotList":        slotData,
@@ -291,6 +241,51 @@ func (admin *Admin) getSlotList() (list []base.Slot, err error) {
 //MigrateHandle 数据迁移.
 func (admin *Admin) MigrateHandle(c *gin.Context) {
 	if c.Request.Method == "POST" {
+		slotid := utils.ParseInt(c.PostForm("slotid"))
+		if slotid < 0 || slotid > 1023 {
+			admin.ReturnJson(c, "插槽id错误", false)
+			return
+		}
+
+		//更具插槽id获取当前插槽所属服务器.
+		slot, err := admin.getIPbySlotid(slotid)
+		if err != nil {
+			log.Printf("err:%+v\n", err)
+			admin.ReturnJson(c, "创建任务失败", false)
+			return
+		}
+
+		//判断当前插槽的状态.
+		if slot.Types == base.SLOT_TYPE_MIGRATE {
+			admin.ReturnJson(c, "当前插槽已经处于迁移状态", false)
+			return
+		}
+
+		targetip := c.PostForm("targetip")
+		if len(targetip) < 1 {
+			admin.ReturnJson(c, "目标ip不能为空", false)
+			return
+		}
+
+		//判断目标ip是否与原ip一致.
+		if targetip == slot.IP {
+			admin.ReturnJson(c, "目标ip不能与原ip一致", false)
+			return
+		}
+
+		task := model.Task{
+			SlotID:    slotid,
+			MigrateIP: slot.IP,
+			TargetIP:  targetip,
+			Status:    0,
+		}
+		if err := admin.Model.CreateTask(task); err != nil {
+			log.Printf("err:%+v\n", err)
+			admin.ReturnJson(c, "创建任务失败", false)
+			return
+		}
+
+		admin.ReturnJson(c, "创建任务成功", true)
 		return
 	}
 
@@ -300,8 +295,82 @@ func (admin *Admin) MigrateHandle(c *gin.Context) {
 		return
 	}
 
+	//获取任务.
+	task, err := admin.Model.GetTaskList()
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		return
+	}
+
 	data := map[string]interface{}{
 		"CacheServerList": cacheServer,
+		"TaskList":        task,
 	}
 	c.HTML(http.StatusOK, "migrate.html", data)
+}
+
+func (admin *Admin) getIPbySlotid(slotid int) (slot base.Slot, err error) {
+	response, err := admin.Etcd.Get(context.Background(), fmt.Sprintf("/slot/%d", slotid))
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		return slot, err
+	}
+
+	var data []byte
+	for _, item := range response.Kvs {
+		data = item.Value
+	}
+
+	if err := json.Unmarshal(data, &slot); err != nil {
+		log.Printf("err:%+v\n", err)
+		return slot, err
+	}
+
+	return slot, nil
+}
+
+//StartMigrateHandle .
+func (admin *Admin) StartMigrateHandle(c *gin.Context) {
+	taskid := utils.ParseInt(c.PostForm("taskid"))
+	if taskid < 1 {
+		admin.ReturnJson(c, "请求数据错误", false)
+		return
+	}
+
+	//获取任务信息.
+	task, err := admin.Model.QueryTaskById(taskid)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		admin.ReturnJson(c, err.Error(), false)
+		return
+	}
+
+	//更改插槽的数据.
+	slot := base.Slot{
+		ID:    task.SlotID,
+		Types: base.SLOT_TYPE_NORMAL,
+		IP:    task.TargetIP,
+	}
+	b, err := json.Marshal(slot)
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		admin.ReturnJson(c, "请求任务信息失败", false)
+		return
+	}
+	_, err = admin.Etcd.Put(context.Background(), fmt.Sprintf("/slot/%d", task.SlotID), string(b))
+	if err != nil {
+		log.Printf("err:%+v\n", err)
+		admin.ReturnJson(c, "请求任务信息失败", false)
+		return
+	}
+
+	//更改任务状态.
+	if err := admin.Model.UpdateTaskStatusById(taskid, 1); err != nil {
+		admin.ReturnJson(c, err.Error(), false)
+		return
+	}
+
+	//TODO 执行迁移任务.
+
+	admin.ReturnJson(c, "开始迁移", true)
 }

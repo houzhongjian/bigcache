@@ -1,6 +1,8 @@
 package base
 
-import "net"
+import (
+	"net"
+)
 
 //插槽类型.
 type SlotType uint

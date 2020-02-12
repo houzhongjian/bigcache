@@ -5,20 +5,39 @@
           <button class="btn btn-primary" id="newCacheServer" type="button" data-toggle="modal" data-target="#myModal">创建迁移计划</button>
         </div>
         <div class="col-md-12">
-          <table class="table table-striped">
+          <table class="table table-striped table-bordered table-hover" style="margin-top:30px;">
             <thead>
               <tr>
                   <th>任务编号</th>
                   <th>迁移插槽编号</th>
+                  <th>插槽所属IP</th>
                   <th>迁移IP</th>
                   <th>任务状态</th>
                   <th>操作</th>
               </tr>
               </thead>
               <tfoot>
+                {{$len := len .TaskList}}
+                {{if gt $len 0}}
+                {{range .TaskList}}
+                <tr>
+                  <td>{{.ID}}</td>
+                  <td>{{.SlotID}}</td>
+                  <td>{{.MigrateIP}}</td>
+                  <td>{{.TargetIP}}</td>
+                  <td>{{.StatusName}}</td>
+                  {{if eq .Status 0}}
+                  <td><button class="btn btn-warning btn-xs start" id="{{.ID}}" type="button">开始</button></td>
+                  {{else}}
+                  <td><button class="btn btn-info btn-xs start" disabled id="{{.ID}}" type="button">迁移中</button></td>
+                  {{end}}
+                </tr>
+                {{end}}
+                {{else}}
                   <tr>
-                    <td colspan="5" align="center">暂无迁移任务</td>
+                    <td colspan="6" align="center">暂无迁移任务</td>
                   </tr>
+                  {{end}}
               </tfoot>
           </table>
         </div>
@@ -34,10 +53,10 @@
       </div>
       <div class="modal-body">
         <form>
-          <div class="form-group">
+          <!-- <div class="form-group">
             <label for="serverId">任务编号</label>
             <input type="number" class="form-control" id="taskid" placeholder="">
-          </div>
+          </div> -->
           <div class="form-group">
             <label for="serverId">插槽ID</label>
             <input type="number" class="form-control" id="slotid" placeholder="">
@@ -71,16 +90,16 @@
 
       $("#addSlot").click(function(){
           //获取serverId和serverIp.
-          var serverIp = $("#serverIp").val()
-          var startSlot = $("#startSlot").val()
-          var endSlot = $("#endSlot").val()
+          // var taskid = $("#taskid").val()
+          var slotid = $("#slotid").val()
+          var targetip = $("#targetip").val()
 
           var obj = {
-            "serverIp":serverIp,
-            "startSlot":startSlot,
-            "endSlot":endSlot,
+            // "taskid":taskid,
+            "slotid":slotid,
+            "targetip":targetip,
           }
-          $.post("/admin/slot",obj,function(res){
+          $.post("/admin/migrate",obj,function(res){
               console.log(res)
               alert(res.msg)
               if (res.status) {
@@ -88,6 +107,23 @@
                 window.location.reload()
               }
           },'json')
+      })
+
+      $(".start").click(function(){
+        var id = $(this).attr("id")
+        var obj = {
+          "taskid":id,
+        }
+        var _this = $(this)
+        $.post("/admin/startmig",obj,function(res){
+            alert(res.msg)
+              if (res.status) {
+                _this.html("迁移中")
+                _this.attr("disabled",true)
+                $('#myModal').modal('toggle')
+                window.location.reload()
+              }
+        },'json')
       })
   })
 </script>
