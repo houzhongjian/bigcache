@@ -49,7 +49,7 @@ func (m *Model) connection() *gorm.Model {
 	}
 
 	// 启用Logger，显示详细日志
-	db.LogMode(true)
+	// db.LogMode(true)
 	m.db = db
 
 	m.AutoMigrate()

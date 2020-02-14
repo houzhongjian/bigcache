@@ -376,6 +376,6 @@ func (admin *Admin) StartMigrateHandle(c *gin.Context) {
 
 	//TODO 执行迁移任务.
 	//通知对应服务，开始准备迁移.
-	go migrate.Run(slot)
+	migrate.List <- slot
 	admin.ReturnJson(c, "开始迁移", true)
 }
