@@ -29,7 +29,8 @@ func Load(path string) {
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-
+		//出去window中的回车不兼容,导致服务无法启动
+		line = strings.Trim(line,"\r")
 		//按照=来拆分配置.
 		arr := strings.Split(line, "=")
 		key := strings.Trim(arr[0], " ")
