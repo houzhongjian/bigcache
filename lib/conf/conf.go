@@ -20,17 +20,18 @@ func Load(path string) {
 
 	cf := make(map[string]string)
 	for _, line := range sarr {
+		//出去window中的回车不兼容,导致服务无法启动
+		line = strings.Trim(line,"\r")
 		//忽略掉空行.
 		if len(line) < 1 {
 			continue
 		}
 
-		//忽略掉注释.
-		if strings.HasPrefix(line, "#") {
+		//忽略掉注释和空行.
+		if strings.HasPrefix(line, "#"){
 			continue
 		}
-		//出去window中的回车不兼容,导致服务无法启动
-		line = strings.Trim(line,"\r")
+		
 		//按照=来拆分配置.
 		arr := strings.Split(line, "=")
 		key := strings.Trim(arr[0], " ")
